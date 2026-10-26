@@ -11,11 +11,16 @@ function getPool() {
     if (!connectionString) {
       console.warn('⚠️ DATABASE_URL puuttuu ympäristömuuttujista!');
     }
-    const isRemote = connectionString && !connectionString.includes('localhost') && !connectionString.includes('127.0.0.1');
+    // Railwayn sisäisessä verkossa (*.railway.internal) tai paikallisesti SSL ei ole käytössä.
+    // Vain ulkoiset yhteydet (kuten *.proxy.rlwy.net) vaativat SSL:n.
+    const isInternal = !connectionString ||
+      connectionString.includes('railway.internal') ||
+      connectionString.includes('localhost') ||
+      connectionString.includes('127.0.0.1');
 
     pool = new Pool({
       connectionString,
-      ssl: isRemote ? { rejectUnauthorized: false } : false
+      ssl: isInternal ? false : { rejectUnauthorized: false }
     });
 
     pool.on('error', (err) => {
