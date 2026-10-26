@@ -11,8 +11,16 @@ function getPool() {
     if (!connectionString) {
       console.warn('⚠️ DATABASE_URL puuttuu ympäristömuuttujista!');
     }
-    // Railwayn sisäisessä verkossa (*.railway.internal) tai paikallisesti SSL ei ole käytössä.
-    // Vain ulkoiset yhteydet (kuten *.proxy.rlwy.net) vaativat SSL:n.
+
+    // Tulostetaan yhteystiedot lokiin (salasana piilotettuna)
+    try {
+      const u = new URL(connectionString);
+      console.log(`🔌 PostgreSQL-kohde: ${u.host}${u.pathname} (käyttäjä: ${u.username})`);
+    } catch {
+      console.log('🔌 PostgreSQL: luodaan yhteysallasta...');
+    }
+
+    // Railwayn sisäisessä verkossa (*.railway.internal) tai paikallisesti SSL ei ole käytössä
     const isInternal = !connectionString ||
       connectionString.includes('railway.internal') ||
       connectionString.includes('localhost') ||
@@ -20,38 +28,67 @@ function getPool() {
 
     pool = new Pool({
       connectionString,
-      ssl: isInternal ? false : { rejectUnauthorized: false }
+      ssl: isInternal ? false : { rejectUnauthorized: false },
+      keepAlive: true,
+      max: 5,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000
     });
 
     pool.on('error', (err) => {
-      console.error('Odottamaton PostgreSQL-virhe poolissa:', err);
+      console.error('⚠️ PostgreSQL-allas ilmoitti virheestä (käsitellään automaattisesti):', err.message);
     });
   }
   return pool;
 }
 
 /**
- * Alustaa tietokantataulut schema.sql -tiedostosta
+ * Suorittaa SQL-kyselyn automaattisella uudelleenyrityksellä yhteyden katketessa
  */
-async function initDb() {
+async function query(text, params) {
   const p = getPool();
+  try {
+    return await p.query(text, params);
+  } catch (err) {
+    if (err.code === 'ECONNRESET' || err.message?.includes('Connection terminated') || err.message?.includes('Connection reset')) {
+      console.warn('⚠️ Tietokantayhteys nollautui, kokeillaan kerran uudelleen...');
+      return await p.query(text, params);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Alustaa tietokantataulut schema.sql -tiedostosta (uudelleenyritykset käynnistyksen yhteydessä)
+ */
+async function initDb(retries = 5, delayMs = 3000) {
   const schemaPath = path.join(__dirname, 'schema.sql');
   const schemaSql = fs.readFileSync(schemaPath, 'utf8');
 
-  const client = await p.connect();
-  try {
-    await client.query(schemaSql);
-    console.log('✅ Tietokantataulut alustettu onnistuneesti.');
-  } finally {
-    client.release();
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const p = getPool();
+      const client = await p.connect();
+      try {
+        await client.query(schemaSql);
+        console.log('✅ Tietokantataulut alustettu onnistuneesti.');
+        return;
+      } finally {
+        client.release();
+      }
+    } catch (err) {
+      console.warn(`⚠️ Tietokannan alustusyritys ${attempt}/${retries} epäonnistui (${err.message}).`);
+      if (attempt === retries) {
+        throw err;
+      }
+      console.log(`Odotetaan ${delayMs / 1000}s ennen uutta yritystä...`);
+      await new Promise(r => setTimeout(r, delayMs));
+    }
   }
 }
 
 /**
  * Kirjaa käyttäjän hyvinvointiteon
- * Säännöt:
- * - Enintään 1 teko per kategoria per päivä (Helsingin aikaa)
- * - Enintään 5 tekoa per päivä
  */
 async function logAction(discordId, username, category, description) {
   const p = getPool();
@@ -120,17 +157,13 @@ async function logAction(discordId, username, category, description) {
  * Hakee käyttäjän henkilökohtaiset tilastot (vain itselle näkyvä)
  */
 async function getUserStats(discordId) {
-  const p = getPool();
-  
-  // Käyttäjän kokonaispisteet
-  const userRes = await p.query(
+  const userRes = await query(
     'SELECT total_points FROM users WHERE discord_id = $1',
     [discordId]
   );
   const totalPoints = userRes.rows[0]?.total_points || 0;
 
-  // Viikon pisteet (maanantaista lähtien Helsinki-aikaa)
-  const weekRes = await p.query(`
+  const weekRes = await query(`
     SELECT COUNT(*)::int AS week_points
     FROM point_logs
     WHERE discord_id = $1
@@ -138,8 +171,7 @@ async function getUserStats(discordId) {
   `, [discordId]);
   const weekPoints = weekRes.rows[0]?.week_points || 0;
 
-  // Tänään kirjatut kategoriat
-  const todayRes = await p.query(`
+  const todayRes = await query(`
     SELECT category
     FROM point_logs
     WHERE discord_id = $1
@@ -158,8 +190,7 @@ async function getUserStats(discordId) {
  * Hakee yhteisöpotin tilan
  */
 async function getCommunityPool() {
-  const p = getPool();
-  const res = await p.query('SELECT total_points, total_donations FROM community_pool WHERE id = 1');
+  const res = await query('SELECT total_points, total_donations FROM community_pool WHERE id = 1');
   if (res.rows.length === 0) {
     return { total_points: 0, total_donations: 0 };
   }
@@ -167,11 +198,10 @@ async function getCommunityPool() {
 }
 
 /**
- * Hakee tämän päivän teot koosteeseen (anonyymit kuvaukset kategorioittain)
+ * Hakee tämän päivän teot koosteeseen
  */
 async function getDailyActions() {
-  const p = getPool();
-  const res = await p.query(`
+  const res = await query(`
     SELECT category, description, logged_at
     FROM point_logs
     WHERE (logged_at AT TIME ZONE 'Europe/Helsinki')::date = (NOW() AT TIME ZONE 'Europe/Helsinki')::date
@@ -212,8 +242,7 @@ async function getDailyActions() {
  * Hakee kuluvan viikon tilastot
  */
 async function getWeeklyStats() {
-  const p = getPool();
-  const res = await p.query(`
+  const res = await query(`
     SELECT category, COUNT(*)::int AS count
     FROM point_logs
     WHERE (logged_at AT TIME ZONE 'Europe/Helsinki') >= DATE_TRUNC('week', NOW() AT TIME ZONE 'Europe/Helsinki')
@@ -246,8 +275,7 @@ async function getWeeklyStats() {
  * Hakee akvaarion esineet ja kalat
  */
 async function getAquariumItems() {
-  const p = getPool();
-  const res = await p.query(`
+  const res = await query(`
     SELECT id, item_key, item_type, item_name, emoji, color, size, pos_x, pos_y, purchased_at
     FROM aquarium_items
     ORDER BY id ASC
@@ -290,7 +318,6 @@ async function buyItem(itemKey) {
     `, [item.price]);
 
     if (item.type === 'donation') {
-      // Lahjoituksen kirjaus
       await client.query(`
         UPDATE community_pool
         SET total_donations = total_donations + 1
@@ -305,16 +332,11 @@ async function buyItem(itemKey) {
       return { success: true, item, isDonation: true };
     }
 
-    // Lasketaan satunnainen sijainti akvaariossa (800x400)
-    let posX = Math.floor(Math.random() * 640) + 80;
-    let posY;
-    if (item.type === 'decoration') {
-      // Pohjalle (y = 290 - 340)
-      posY = Math.floor(Math.random() * 50) + 290;
-    } else {
-      // Kalat uivat vedessä (y = 70 - 260)
-      posY = Math.floor(Math.random() * 190) + 70;
-    }
+    // Lasketaan sijainti akvaariossa
+    const posX = Math.floor(Math.random() * 640) + 80;
+    const posY = item.type === 'decoration'
+      ? Math.floor(Math.random() * 50) + 290
+      : Math.floor(Math.random() * 190) + 70;
 
     const insertRes = await client.query(`
       INSERT INTO aquarium_items (item_key, item_type, item_name, emoji, color, size, pos_x, pos_y)
@@ -347,7 +369,6 @@ async function sellItem(identifier) {
   try {
     await client.query('BEGIN');
 
-    // Voidaan etsiä joko suoraan ID:llä tai item_key / item_name mukaan
     let findQuery;
     let findParam;
     if (!isNaN(identifier)) {
@@ -375,10 +396,8 @@ async function sellItem(identifier) {
     const shopItem = shopItems.find(i => i.key === itemInAquarium.item_key);
     const refund = shopItem ? shopItem.sellPrice : Math.floor(itemInAquarium.size * 5);
 
-    // Poistetaan esine akvaariosta
     await client.query('DELETE FROM aquarium_items WHERE id = $1', [itemInAquarium.id]);
 
-    // Palautetaan pisteet pooliin
     await client.query(`
       UPDATE community_pool
       SET total_points = total_points + $1
