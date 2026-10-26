@@ -1,0 +1,20 @@
+[phases.setup]
+nixPkgs = [
+  "cairo",
+  "pango",
+  "libpng",
+  "libjpeg",
+  "giflib",
+  "librsvg",
+  "pixman",
+  "pkg-config",
+  "fontconfig",
+  "freetype",
+  "dejavu_fonts"
+]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[start]
+cmd = "node src/index.js"
