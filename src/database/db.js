@@ -7,28 +7,30 @@ let pool = null;
 
 function getPool() {
   if (!pool) {
-    const connectionString = process.env.DATABASE_URL;
+    const connectionString = process.env.DATABASE_PUBLIC_URL || process.env.DATABASE_URL;
     if (!connectionString) {
-      console.warn('⚠️ DATABASE_URL puuttuu ympäristömuuttujista!');
+      console.warn('⚠️ DATABASE_URL tai DATABASE_PUBLIC_URL puuttuu ympäristömuuttujista!');
     }
+
+    // Jos käytetään localhostia, SSL ei ole käytössä.
+    // Railwayn julkisessa proxy-osoitteessa (*.proxy.rlwy.net) SSL on pakollinen ({ rejectUnauthorized: false }).
+    const isLocal = !connectionString ||
+      connectionString.includes('localhost') ||
+      connectionString.includes('127.0.0.1');
+
+    const useSsl = !isLocal;
 
     // Tulostetaan yhteystiedot lokiin (salasana piilotettuna)
     try {
       const u = new URL(connectionString);
-      console.log(`🔌 PostgreSQL-kohde: ${u.host}${u.pathname} (käyttäjä: ${u.username})`);
+      console.log(`🔌 PostgreSQL-kohde: ${u.host}${u.pathname} (käyttäjä: ${u.username}, SSL: ${useSsl ? 'kyllä' : 'ei'})`);
     } catch {
       console.log('🔌 PostgreSQL: luodaan yhteysallasta...');
     }
 
-    // Railwayn sisäisessä verkossa (*.railway.internal) tai paikallisesti SSL ei ole käytössä
-    const isInternal = !connectionString ||
-      connectionString.includes('railway.internal') ||
-      connectionString.includes('localhost') ||
-      connectionString.includes('127.0.0.1');
-
     pool = new Pool({
       connectionString,
-      ssl: isInternal ? false : { rejectUnauthorized: false },
+      ssl: useSsl ? { rejectUnauthorized: false } : false,
       keepAlive: true,
       max: 5,
       idleTimeoutMillis: 30000,
