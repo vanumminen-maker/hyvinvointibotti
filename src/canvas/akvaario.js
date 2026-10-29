@@ -1,4 +1,20 @@
-const { createCanvas } = require('canvas');
+const { createCanvas, registerFont } = require('canvas');
+const path = require('path');
+
+// Rekisteröidään projektin mukana toimitettavat DejaVu-fontit
+let fontsRegistered = false;
+function ensureFonts() {
+  if (fontsRegistered) return;
+  try {
+    const regularPath = path.join(__dirname, '../assets/fonts/DejaVuSans.ttf');
+    const boldPath = path.join(__dirname, '../assets/fonts/DejaVuSans-Bold.ttf');
+    registerFont(regularPath, { family: 'DejaVuSans' });
+    registerFont(boldPath, { family: 'DejaVuSans', weight: 'bold' });
+    fontsRegistered = true;
+  } catch (err) {
+    console.warn('Fontin rekisteröinti epäonnistui:', err.message);
+  }
+}
 
 /**
  * Piirtää yhteisön akvaarion Canvasilla.
@@ -9,6 +25,8 @@ const { createCanvas } = require('canvas');
  * @returns {Buffer} PNG-kuvapuskuri
  */
 function drawAquarium(items = [], totalPoolPoints = 0, totalDonations = 0) {
+  ensureFonts();
+
   const width = 800;
   const height = 450;
   const canvas = createCanvas(width, height);
@@ -103,12 +121,12 @@ function drawAquarium(items = [], totalPoolPoints = 0, totalDonations = 0) {
 
   // 7. Jos akvaario on täysin tyhjä
   if (items.length === 0) {
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    ctx.font = 'italic 18px sans-serif';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.font = 'bold 20px "DejaVuSans", sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('Akvaario odottaa asukkaita!', width / 2, 200);
-    ctx.font = '14px sans-serif';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.font = '14px "DejaVuSans", sans-serif';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
     ctx.fillText('Ylläpito voi hankkia kaloja ja koristeita komennolla /osta', width / 2, 230);
     ctx.textAlign = 'left';
   }
@@ -140,18 +158,18 @@ function drawAquarium(items = [], totalPoolPoints = 0, totalDonations = 0) {
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // Otsikko
+  // Otsikko (ei emojia canvas-tekstissä jotta vältetään tyhjät neliöt)
   ctx.fillStyle = '#caf0f8';
-  ctx.font = 'bold 18px sans-serif';
-  ctx.fillText('🐠 YHTEISÖN HYVINVOINTIAKVAARIO', 30, 45);
+  ctx.font = 'bold 17px "DejaVuSans", sans-serif';
+  ctx.fillText('YHTEISÖN HYVINVOINTIAKVAARIO', 35, 45);
 
   // Yhteisöpotti & lahjoitukset
   ctx.textAlign = 'right';
   ctx.fillStyle = '#ffd166';
-  ctx.font = 'bold 15px sans-serif';
-  let hudInfo = `Potti: ${totalPoolPoints} lusikkaa 🥄`;
+  ctx.font = 'bold 15px "DejaVuSans", sans-serif';
+  let hudInfo = `Potti: ${totalPoolPoints} lusikkaa`;
   if (totalDonations > 0) {
-    hudInfo += `  |  Lahjoitukset: ${totalDonations} kpl 🐾`;
+    hudInfo += `  |  Lahjoitukset: ${totalDonations} kpl`;
   }
   ctx.fillText(hudInfo, width - 35, 45);
   ctx.textAlign = 'left';
@@ -218,9 +236,9 @@ function drawFish(ctx, key, x, y, color, size, name) {
   ctx.arc(-size * 0.6, -size * 0.12, Math.max(1.8, size * 0.08), 0, Math.PI * 2);
   ctx.fill();
 
-  // Nimi tai laji pienenä kalan yläpuolella
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
-  ctx.font = '11px sans-serif';
+  // Nimi pienenä kalan yläpuolella
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.font = '12px "DejaVuSans", sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText(name, 0, -size * 0.85);
 
@@ -235,7 +253,6 @@ function drawDecoration(ctx, key, x, y, color, size, name) {
   ctx.translate(x, y);
 
   if (key === 'vesikasvi') {
-    // Monihaarainen huojuva vesikasvi
     ctx.strokeStyle = color || '#27ae60';
     ctx.lineWidth = 5;
     ctx.lineCap = 'round';
@@ -246,24 +263,17 @@ function drawDecoration(ctx, key, x, y, color, size, name) {
       ctx.stroke();
     }
   } else if (key === 'linna') {
-    // Ritarilinna
     ctx.fillStyle = color || '#6c5ce7';
-    // Keskiosa
     ctx.fillRect(-size * 0.5, -size * 0.7, size, size * 0.7);
-    // Vasen torni
     ctx.fillRect(-size * 0.65, -size, size * 0.3, size);
-    // Oikea torni
     ctx.fillRect(size * 0.35, -size, size * 0.3, size);
-    // Keskiharja
     ctx.fillRect(-size * 0.2, -size * 0.85, size * 0.4, size * 0.2);
-    // Oviportti
     ctx.fillStyle = '#1e1b4b';
     ctx.beginPath();
     ctx.arc(0, -size * 0.3, size * 0.18, Math.PI, 0);
     ctx.fill();
     ctx.fillRect(-size * 0.18, -size * 0.3, size * 0.36, size * 0.3);
   } else if (key === 'koralli') {
-    // Korallirykelmä
     ctx.fillStyle = color || '#ff758c';
     for (let angle = -0.6; angle <= 0.6; angle += 0.3) {
       ctx.save();
@@ -274,7 +284,6 @@ function drawDecoration(ctx, key, x, y, color, size, name) {
       ctx.restore();
     }
   } else if (key === 'hylky') {
-    // Puulaivan hylky
     ctx.fillStyle = color || '#8d6e63';
     ctx.beginPath();
     ctx.moveTo(-size * 0.6, 0);
@@ -283,7 +292,6 @@ function drawDecoration(ctx, key, x, y, color, size, name) {
     ctx.closePath();
     ctx.fill();
 
-    // Mastontynkä
     ctx.strokeStyle = '#5d4037';
     ctx.lineWidth = 4;
     ctx.beginPath();
@@ -291,18 +299,13 @@ function drawDecoration(ctx, key, x, y, color, size, name) {
     ctx.lineTo(10, -size * 0.8);
     ctx.stroke();
   } else if (key === 'meritorni') {
-    // Atlantiksen temppelipylväät
     ctx.fillStyle = color || '#00b894';
-    // Jalusta
     ctx.fillRect(-size * 0.5, -12, size, 12);
-    // Pylväät
     ctx.fillRect(-size * 0.35, -size * 0.8, 10, size * 0.7);
     ctx.fillRect(-size * 0.05, -size * 0.8, 10, size * 0.7);
     ctx.fillRect(size * 0.25, -size * 0.8, 10, size * 0.7);
-    // Katto/arkkitraavi
     ctx.fillRect(-size * 0.45, -size * 0.9, size * 0.9, 14);
   } else {
-    // Pikkukivi / yleisesine
     ctx.fillStyle = color || '#828282';
     ctx.beginPath();
     ctx.ellipse(0, -size * 0.3, size * 0.5, size * 0.3, 0, 0, Math.PI * 2);
@@ -313,8 +316,8 @@ function drawDecoration(ctx, key, x, y, color, size, name) {
   }
 
   // Koristeen nimi pienenä
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-  ctx.font = '10px sans-serif';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+  ctx.font = '11px "DejaVuSans", sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText(name, 0, 16);
 

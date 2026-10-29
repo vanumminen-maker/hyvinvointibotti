@@ -1,4 +1,20 @@
-const { createCanvas } = require('canvas');
+const { createCanvas, registerFont } = require('canvas');
+const path = require('path');
+
+// Rekisteröidään DejaVu-fontit
+let fontsRegistered = false;
+function ensureFonts() {
+  if (fontsRegistered) return;
+  try {
+    const regularPath = path.join(__dirname, '../assets/fonts/DejaVuSans.ttf');
+    const boldPath = path.join(__dirname, '../assets/fonts/DejaVuSans-Bold.ttf');
+    registerFont(regularPath, { family: 'DejaVuSans' });
+    registerFont(boldPath, { family: 'DejaVuSans', weight: 'bold' });
+    fontsRegistered = true;
+  } catch (err) {
+    console.warn('Fontin rekisteröinti epäonnistui:', err.message);
+  }
+}
 
 /**
  * Piirtää "Hyvinvointimies" -kaavion canvasilla.
@@ -15,6 +31,8 @@ const { createCanvas } = require('canvas');
  * @returns {Buffer} PNG-kuvapuskuri
  */
 function drawHyvinvointimies(categoryCounts, totalToday = 0, dateStr = '') {
+  ensureFonts();
+
   const width = 800;
   const height = 500;
   const canvas = createCanvas(width, height);
@@ -34,16 +52,15 @@ function drawHyvinvointimies(categoryCounts, totalToday = 0, dateStr = '') {
 
   // Otsikko
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 26px sans-serif';
+  ctx.font = 'bold 24px "DejaVuSans", sans-serif';
   ctx.fillText('PÄIVÄN HYVINVOINTIMIES', 40, 55);
 
   ctx.fillStyle = '#9aa0a6';
-  ctx.font = '16px sans-serif';
+  ctx.font = '15px "DejaVuSans", sans-serif';
   const subtitle = dateStr ? `${dateStr} • Yhteensä ${totalToday} tekoa` : `Yhteensä ${totalToday} tekoa tänään`;
   ctx.fillText(subtitle, 40, 82);
 
   // Lasketaan suhteelliset kertoimet (0 ... 1)
-  // Jos jossain kategoriassa on 0, annetaan minimikoko jotta hahmo säilyy ehjänä
   const maxCategory = Math.max(
     1,
     categoryCounts.liikunta || 0,
@@ -97,7 +114,6 @@ function drawHyvinvointimies(categoryCounts, totalToday = 0, dateStr = '') {
   const torsoHeight = 90;
   const torsoTop = manY - 30;
   ctx.beginPath();
-  // Pyöristetty vartalo
   const r = torsoWidth / 2;
   const left = manX - r;
   const top = torsoTop;
@@ -113,12 +129,10 @@ function drawHyvinvointimies(categoryCounts, totalToday = 0, dateStr = '') {
   ctx.lineWidth = armLeftWidth;
   ctx.beginPath();
   ctx.moveTo(manX - torsoWidth / 2, manY - 10);
-  // Käsi heiluttaa yläviistoon ystäville
   ctx.lineTo(manX - 55 * scaleSosiaaliset, manY - 10);
   ctx.lineTo(manX - 75 * scaleSosiaaliset, manY - 60 * scaleSosiaaliset);
   ctx.stroke();
 
-  // Kämmen / tervehdysefekti
   ctx.fillStyle = '#f39c12';
   ctx.beginPath();
   ctx.arc(manX - 75 * scaleSosiaaliset, manY - 60 * scaleSosiaaliset, armLeftWidth / 2 + 4, 0, Math.PI * 2);
@@ -130,12 +144,10 @@ function drawHyvinvointimies(categoryCounts, totalToday = 0, dateStr = '') {
   ctx.lineWidth = armRightWidth;
   ctx.beginPath();
   ctx.moveTo(manX + torsoWidth / 2, manY - 10);
-  // Käsi kurottaa luovasti
   ctx.lineTo(manX + 55 * scaleLuovuus, manY + 10);
   ctx.lineTo(manX + 80 * scaleLuovuus, manY - 35 * scaleLuovuus);
   ctx.stroke();
 
-  // Luovuuden tähti käden päässä
   ctx.fillStyle = '#e84393';
   ctx.beginPath();
   ctx.arc(manX + 80 * scaleLuovuus, manY - 35 * scaleLuovuus, armRightWidth / 2 + 5, 0, Math.PI * 2);
@@ -155,15 +167,12 @@ function drawHyvinvointimies(categoryCounts, totalToday = 0, dateStr = '') {
   // Kasvot: rentoutunut hymy ja suljetut silmät (lepo)
   ctx.strokeStyle = '#2d3436';
   ctx.lineWidth = 2.5;
-  // Vasen silmä (nukkuva kaari)
   ctx.beginPath();
   ctx.arc(manX - 10 * scaleLepo, headY - 4 * scaleLepo, 6 * scaleLepo, 0.1 * Math.PI, 0.9 * Math.PI);
   ctx.stroke();
-  // Oikea silmä
   ctx.beginPath();
   ctx.arc(manX + 10 * scaleLepo, headY - 4 * scaleLepo, 6 * scaleLepo, 0.1 * Math.PI, 0.9 * Math.PI);
   ctx.stroke();
-  // Hymy
   ctx.beginPath();
   ctx.arc(manX, headY + 5 * scaleLepo, 12 * scaleLepo, 0.15 * Math.PI, 0.85 * Math.PI);
   ctx.stroke();
@@ -173,16 +182,16 @@ function drawHyvinvointimies(categoryCounts, totalToday = 0, dateStr = '') {
   let barY = 130;
 
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 18px sans-serif';
+  ctx.font = 'bold 17px "DejaVuSans", sans-serif';
   ctx.fillText('PÄIVÄN JAKAUTUMINEN', rightX, barY);
   barY += 35;
 
   const categories = [
-    { key: 'lepo', name: 'Lepo & palautuminen (Pää)', color: '#a29bfe', count: categoryCounts.lepo || 0, emoji: '😴' },
-    { key: 'ravitsemus', name: 'Ravitsemus (Vartalo)', color: '#2ecc71', count: categoryCounts.ravitsemus || 0, emoji: '🥗' },
-    { key: 'sosiaaliset', name: 'Sosiaaliset kontaktit (Vasen käsi)', color: '#f1c40f', count: categoryCounts.sosiaaliset || 0, emoji: '👥' },
-    { key: 'luovuus', name: 'Luovuus (Oikea käsi)', color: '#fd79a8', count: categoryCounts.luovuus || 0, emoji: '🎨' },
-    { key: 'liikunta', name: 'Liikunta (Jalat)', color: '#00cec9', count: categoryCounts.liikunta || 0, emoji: '🏃' }
+    { key: 'lepo', name: 'Lepo & palautuminen (Pää)', color: '#a29bfe', count: categoryCounts.lepo || 0 },
+    { key: 'ravitsemus', name: 'Ravitsemus (Vartalo)', color: '#2ecc71', count: categoryCounts.ravitsemus || 0 },
+    { key: 'sosiaaliset', name: 'Sosiaaliset kontaktit (Vasen käsi)', color: '#f1c40f', count: categoryCounts.sosiaaliset || 0 },
+    { key: 'luovuus', name: 'Luovuus (Oikea käsi)', color: '#fd79a8', count: categoryCounts.luovuus || 0 },
+    { key: 'liikunta', name: 'Liikunta (Jalat)', color: '#00cec9', count: categoryCounts.liikunta || 0 }
   ];
 
   const barMaxWidth = 230;
@@ -190,12 +199,12 @@ function drawHyvinvointimies(categoryCounts, totalToday = 0, dateStr = '') {
   for (const cat of categories) {
     // Nimiteksti
     ctx.fillStyle = '#e2e8f0';
-    ctx.font = '14px sans-serif';
-    ctx.fillText(`${cat.emoji} ${cat.name}`, rightX, barY);
+    ctx.font = '13px "DejaVuSans", sans-serif';
+    ctx.fillText(cat.name, rightX, barY);
 
     // Lukumäärä oikeaan reunaan
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 13px "DejaVuSans", sans-serif';
     ctx.fillText(`${cat.count} kpl`, rightX + barMaxWidth + 65, barY);
 
     barY += 8;
@@ -220,8 +229,8 @@ function drawHyvinvointimies(categoryCounts, totalToday = 0, dateStr = '') {
 
   // Alareunan tsemppilause
   ctx.fillStyle = '#718096';
-  ctx.font = 'italic 13px sans-serif';
-  ctx.fillText('Jokainen pienikin teko vie yhteisöä eteenpäin! 🥄', 40, height - 35);
+  ctx.font = 'italic 13px "DejaVuSans", sans-serif';
+  ctx.fillText('Jokainen pienikin teko vie yhteisöä eteenpäin!', 40, height - 35);
 
   return canvas.toBuffer('image/png');
 }
